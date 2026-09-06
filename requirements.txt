@@ -1,0 +1,11 @@
+langchain
+langchain-community
+langchain-chroma
+langchain-huggingface
+langchain-ollama
+chromadb
+sentence-transformers
+pdfplumber
+python-docx
+python-dotenv
+ollama
