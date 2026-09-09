@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from pydantic import BaseModel, Field
 from typing import Dict
 from pathlib import Path
@@ -7,20 +7,34 @@ import config
 from src.agent.rag_agent import RagAgent
 from src.ingestion_pipeline import run_ingestion
 
+from src.retrieval.vector_store import load_vector_store
+from sqlalchemy.orm import Session
+
+from db.database import Base, engine, get_db
+from db.models import User
+from auth.routes import router as auth_router
+from auth.dependencies import get_current_user
+
+Base.metadata.create_all(bind=engine)
+
+
 app = FastAPI(
-    title="HR Policy Assistant Api",
-    description="RAG-based API that answers HR policy questions",
+    title="Mulit-Domain RAG Assistant API",
     version="1.0.0",
 )
 
+app.include_router(auth_router, tags=["auth"])
+agents_sessions: dict[tuple, RagAgent] = {}
 
-agent = RagAgent()
+
+# agent = RagAgent()
 
 
 ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"]
 
 
 class ChatRequest(BaseModel):
+    domain: str = Field(..., description=f"One of: {config.SUPPORTED_DOMAINS}")
     question: str = Field(..., min_length=1, description="The user's question")
 
 
@@ -28,28 +42,27 @@ class ChatResponse(BaseModel):
     answer: str
 
 
+@app.get("/domains")
+def list_domains():
+    return {"domains": config.SUPPORTED_DOMAINS}
+
+
 @app.get("/health")
 def check_health():
     return {"status": "ok"}
 
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest):
-    try:
-        answer = agent.ask(request.question)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Agent error:{str(e)}")
-    return ChatResponse(answer=answer)
-
-
-@app.post("/reset")
-def reset_conversation():
-    agent.memory.clear()
-    return {"status": "Conversation memory cleared"}
-
-
 @app.post("/upload")
-def upload_document(file: UploadFile = File(...)):
+def upload_document(
+    domain: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    if domain not in config.SUPPORTED_DOMAINS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid domain. Choose from {config.SUPPORTED_DOMAINS}",
+        )
 
     suffix = Path(file.filename).suffix.lower()
 
@@ -59,20 +72,51 @@ def upload_document(file: UploadFile = File(...)):
             detail=f"Unsupported file type '{suffix}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
         )
 
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    destination = config.DATA_DIR / file.filename
+    data_dir = config.get_data_dir(current_user.username, domain)
+    destination = data_dir / file.filename
+
+    with open(destination, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    file.file.close()
+
+    result = run_ingestion(current_user.username, domain)
+    agents_sessions.pop((current_user.username, domain), None)
+
+    return {
+        "status": "uploaded and  ingested",
+        "filename": file.filename,
+        "result": result,
+    }
+
+
+@app.post("/chat")
+def chat(request: ChatRequest, current_user: User = Depends(get_current_user)):
+    if request.domain not in config.SUPPORTED_DOMAINS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid domain. Choose from {config.SUPPORTED_DOMAINS}",
+        )
+
+    key = (current_user.username, request.domain)
+
+    if key not in agents_sessions:
+        vectorestore_dir = config.get_vectorstore_dir(
+            current_user.username, request.domain
+        )
+        collection_name = config.get_collection_name(current_user.username, request.domain)
+        vector_store = load_vector_store(vectorestore_dir, collection_name)
+        agents_sessions[key] = RagAgent(vector_store, request.domain)
 
     try:
-        with open(destination, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        answer = agents_sessions[key].ask(request.question)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {ste(e)}")
-    finally:
-        file.file.close()
-    try:
-        run_ingestion()
+        raise HTTPException(status_code=500, detail=f"Agent error:{str(e)}")
+    return {"answer": answer}
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
 
-    return {"status": "Upload and ingested", "filename": file.filename}
+@app.post("/reset")
+def reset_conversation(domain: str, current_user: User = Depends(get_current_user)):
+    key = (current_user.username, domain)
+    if key in agents_sessions:
+        agents_sessions[key].memory.clear()
+    return {"status": "Conversation memory cleared"}

@@ -1,5 +1,5 @@
 from typing import List, Dict
-
+from pathlib import Path
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
@@ -7,7 +7,9 @@ import config
 from src.embeddings.embedder import get_embedding_function
 
 
-def build_vector_store(chunks: List[Dict]) -> Chroma:
+def build_vector_store(
+    chunks: List[Dict], persist_dir: Path, collection_name: str
+) -> Chroma:
 
     documents = [
         Document(
@@ -28,19 +30,19 @@ def build_vector_store(chunks: List[Dict]) -> Chroma:
     vector_store = Chroma.from_documents(
         documents=documents,
         embedding=get_embedding_function(),
-        collection_name=config.CHROMA_COLLECTION_NAME,
-        persist_directory=str(config.CHROMA_DIR),
+        collection_name=collection_name,
+        persist_directory=str(persist_dir),
     )
 
     return vector_store
 
 
-def load_vector_store() -> Chroma:
+def load_vector_store(persist_dir:Path,collection_name:str) -> Chroma:
 
     return Chroma(
-        collection_name=config.CHROMA_COLLECTION_NAME,
+        collection_name=collection_name,
         embedding_function=get_embedding_function(),
-        persist_directory=str(config.CHROMA_DIR),
+        persist_directory=str(persist_dir),
     )
 
 

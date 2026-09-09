@@ -8,10 +8,16 @@ from src.chunking.compare import compare_strategies
 from src.retrieval.vector_store import build_vector_store
 
 
-def run_ingestion():
+def run_ingestion(username:str , domain:str) ->dict:
+    data_dir = config.get_data_dir(username,domain)
+    vectorstore_dir= config.get_vectorstore_dir(username,domain)
+    collection_name = config.get_collection_name(username,domain)
 
-    print("Loading documents...")
-    raw_pages = load_documents(config.DATA_DIR)
+
+    print(f"Loading documents for {username}/{domain}...")
+
+    
+    raw_pages = load_documents(data_dir)
     print(f"Loaded {len(raw_pages)} page / paragraph units.")
 
     print("Cleaning documents...")
@@ -35,11 +41,11 @@ def run_ingestion():
 
     print("Embedding and storing chunks in Chroma...")
 
-    build_vector_store(recursive_chunks)
+    build_vector_store(recursive_chunks,vectorstore_dir,collection_name)
 
     print(
         "Ingestion complete. Vector store persisted at:",
-        config.CHROMA_DIR
+        vectorstore_dir
     )
 
 
