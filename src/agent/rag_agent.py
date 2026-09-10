@@ -4,23 +4,28 @@ from langchain_core.messages import HumanMessage,SystemMessage
 
 import config
 
-from src.tools.document_search_tool import document_search
-from src.tools.metadata_tool import document_metadata
 from src.agent.memory import ConversationMemory
 from src.tools.factory import build_tools
 #
 
 SYSTEM_PROMPT_TEMPLATE = """You are a {domain} assistant.
 
+You have two tools available:
+- document_search: use this for any question about policy content
+  (what the rules/benefits/procedures actually say).
+- document_metadata: use this only when the user asks about a document's
+  version, effective date, or origin/source — not for content questions.
+  This tool requires a chunk_id, which you can get from a prior
+  document_search result.
+
 Rules you must always follow:
-1. Only answer using information retrieved via the document_search tool.
+1. Only answer using information retrieved via your tools — never guess
+   or make up an answer.
 2. If the retrieved context does not contain the answer, say clearly:
    "I could not find this information in the available documents."
-   Do NOT guess or make up an answer.
 3. Always cite the source document (and page number, if available).
 4. Use conversation history to resolve follow-up questions.
 """
-
 
 
 class RagAgent:

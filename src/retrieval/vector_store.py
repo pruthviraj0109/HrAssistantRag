@@ -8,7 +8,7 @@ from src.embeddings.embedder import get_embedding_function
 
 
 def build_vector_store(
-    chunks: List[Dict], persist_dir: Path, collection_name: str
+    chunks: List[Dict], persist_dir: Path, collection_name: str,username:str,domain:str,
 ) -> Chroma:
 
     documents = [
@@ -19,6 +19,8 @@ def build_vector_store(
                 "page_number": chunk.get("page_number") or 0,
                 "chunk_id": chunk["chunk_id"],
                 "strategy": chunk.get("strategy", "unknown"),
+                "user_id":username,
+                "domain":domain
             },
         )
         for chunk in chunks
@@ -26,6 +28,18 @@ def build_vector_store(
 
     if not documents:
         raise ValueError("No documents/chunks were created for the vector store.")
+
+    try:   
+        existing= Chroma(
+            collection_name=collection_name,
+            embedding_function=get_embedding_function,
+            persist_directory=str(persist_dir),
+        )  
+        existing.delete_collection()
+        print("Deleting existing collection")
+    except Exception:
+        pass
+        
 
     vector_store = Chroma.from_documents(
         documents=documents,

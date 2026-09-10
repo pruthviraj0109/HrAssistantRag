@@ -1,5 +1,5 @@
 from typing import List, Dict
-
+import uuid
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
@@ -16,7 +16,6 @@ def chunk_recursive(
     )
 
     chunks = []
-    chunk_id = 0
 
     for page in pages:
 
@@ -24,14 +23,12 @@ def chunk_recursive(
 
             chunks.append(
                 {
-                    "chunk_id": f"recursive_{chunk_id}",
+                    "chunk_id": f"recursive_{uuid.uuid4().hex[:12]}",
                     "text": piece,
                     "source": page["source"],
                     "page_number": page.get("page_number"),
                     "strategy": "recursive",
                 }
             )
-
-            chunk_id += 1
 
     return chunks

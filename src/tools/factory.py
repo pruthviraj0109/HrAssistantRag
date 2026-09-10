@@ -1,9 +1,7 @@
-
-from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 from langchain_core.tools import tool, StructuredTool
 from src.retrieval.vector_store import top_k_search
 
-# Extend this as real policy documents gain version numbers / effective dates.
 POLICY_METADATA = {
     "HR Policy _ KESPL.pdf": {
         "version": "v2.1",
@@ -18,6 +16,19 @@ POLICY_METADATA = {
         "effective_date": "2025-04-01",
     },
 }
+
+
+class DocumentSearchInput(BaseModel):
+    query: str = Field(
+        ..., description="The user's question or search phrase, in plain text."
+    )
+
+
+class DocumentMetadataInput(BaseModel):
+    chunk_id: str = Field(
+        ...,
+        description="The exact Chunk ID string returned by a previous document_search call.",
+    )
 
 
 def build_tools(vector_store):
@@ -46,7 +57,9 @@ def build_tools(vector_store):
         Use this only when the user asks about document version, effective
         date, origin, or details about a previously retrieved chunk.
         """
-        collection = vector_store.get(where={"chunk_id": chunk_id}, include=["metadatas"])
+        collection = vector_store.get(
+            where={"chunk_id": chunk_id}, include=["metadatas"]
+        )
         metadatas = collection.get("metadatas", [])
 
         if not metadatas:
@@ -75,10 +88,12 @@ def build_tools(vector_store):
         func=document_search,
         name="document_search",
         description="Searches the user's uploaded documents for this domain. Use for any content question.",
+        args_schema=DocumentSearchInput,
     )
     metadata_tool = StructuredTool.from_function(
         func=document_metadata,
         name="document_metadata",
         description="Retrieves metadata about a specific chunk (source, page, version, effective date). Use only for version/origin questions.",
+        args_schema=DocumentMetadataInput,
     )
     return [search_tool, metadata_tool]
