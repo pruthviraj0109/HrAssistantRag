@@ -64,27 +64,27 @@ def upload_document(
             detail=f"Invalid domain. Choose from {config.SUPPORTED_DOMAINS}",
         )
 
-    suffix = Path(file.filename).suffix.lower()
+    suffix_check = file.filename.lower()
 
-    if suffix not in ALLOWED_EXTENSIONS:
+    if not any(suffix_check.endswith(ext) for ext in config.ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type '{suffix}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
+            detail=f"Unsupported file type . Allowed: {sorted(ALLOWED_EXTENSIONS)}",
         )
 
-    data_dir = config.get_data_dir(current_user.username, domain)
-    destination = data_dir / file.filename
-
-    with open(destination, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    file_bytes = file.file.read()
     file.file.close()
 
-    result = run_ingestion(current_user.username, domain)
+    try:
+        result = run_ingestion(current_user.username, domain, file_bytes, file.filename)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
+
     agents_sessions.pop((current_user.username, domain), None)
 
     return {
-        "status": "uploaded and  ingested",
-        "filename": file.filename,
+        "status": "processed and embedded ",
+        # "filename": result["filename"],
         "result": result,
     }
 
@@ -103,7 +103,9 @@ def chat(request: ChatRequest, current_user: User = Depends(get_current_user)):
         vectorestore_dir = config.get_vectorstore_dir(
             current_user.username, request.domain
         )
-        collection_name = config.get_collection_name(current_user.username, request.domain)
+        collection_name = config.get_collection_name(
+            current_user.username, request.domain
+        )
         vector_store = load_vector_store(vectorestore_dir, collection_name)
         agents_sessions[key] = RagAgent(vector_store, request.domain)
 

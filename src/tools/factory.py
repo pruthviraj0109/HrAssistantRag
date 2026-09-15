@@ -178,7 +178,7 @@ def build_tools(vector_store):
         description="Returns today's date and current time. Use ONLY when explicitly asked about the current date/time.",
         args_schema=DateTimeInput,
     )
-
+    
     duckduckgo_search_tool = DuckDuckGoSearchRun(
         name="web_search",
         description="Searches the web for general knowledge questions Not covered in the uploaded documents. ",

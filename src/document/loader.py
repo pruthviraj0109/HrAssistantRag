@@ -2,28 +2,31 @@ from pathlib import Path
 from typing import List, Dict
 import pdfplumber
 import docx
-
+import tempfile
+from io import BytesIO
+import os
 from docling.document_converter import DocumentConverter
 from docling_core.types.doc import TableItem
 
 
-def load_pdf_pdfplumber(path: Path) -> List[Dict]:
-    pages = []
+# def load_pdf_pdfplumber(file_bytes: bytes, filename: str) -> List[Dict]:
 
-    with pdfplumber.open(path) as pdf:
-        for i, page in enumerate(pdf.pages, start=1):
-            text = page.extract_text() or ""
+#     pages = []
 
-            if text.strip():
-                pages.append(
-                    {
-                        "text": text,
-                        "page_number": i,
-                        "source": path.name,
-                    }
-                )
+#     with pdfplumber.open(path) as pdf:
+#         for i, page in enumerate(pdf.pages, start=1):
+#             text = page.extract_text() or ""
 
-    return pages
+#             if text.strip():
+#                 pages.append(
+#                     {
+#                         "text": text,
+#                         "page_number": i,
+#                         "source": path.name,
+#                     }
+#                 )
+
+#     return pages
 
 
 def _table_to_text(item: TableItem, doc) -> str:
@@ -42,10 +45,7 @@ def _table_to_text(item: TableItem, doc) -> str:
         return ""
 
 
-def load_pdf_docling(path: Path) -> List[Dict]:
-    converter = DocumentConverter()
-    result = converter.convert(str(path))
-    doc = result.document
+def _extract_pages_from_docling_doc(doc, filename: str) -> List[Dict]:
     page_texts: Dict[int, List[str]] = {}
 
     for item, _level in doc.iterate_items():
@@ -68,14 +68,32 @@ def load_pdf_docling(path: Path) -> List[Dict]:
     ):
         combined = "\n".join(texts)
         if combined.strip():
-            pages.append(
-                {"text": combined, "page_number": page_no, "source": path.name}
-            )
+            pages.append({"text": combined, "page_number": page_no, "source": filename})
     return pages
 
 
-def load_docx(path: Path) -> List[Dict]:
-    document = docx.Document(path)
+def load_pdf_docling_bytes(file_bytes: bytes, filename: str) -> List[Dict]:
+
+    suffix = Path(filename).suffix or ".pdf"
+    tmp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp_file:
+            tmp_file.write(file_bytes)
+            tmp_path = tmp_file.name
+
+        converter = DocumentConverter()
+        result = converter.convert(tmp_path)
+        doc = result.document
+
+        return _extract_pages_from_docling_doc(doc, filename)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+def load_docx_bytes(file_bytes: bytes, filename: str) -> List[Dict]:
+    document = docx.Document(BytesIO(file_bytes))
 
     text = "\n".join(p.text for p in document.paragraphs if p.text.strip())
 
@@ -86,13 +104,13 @@ def load_docx(path: Path) -> List[Dict]:
         {
             "text": text,
             "page_number": None,
-            "source": path.name,
+            "source": filename,
         }
     ]
 
 
-def load_txt(path: Path) -> List[Dict]:
-    text = path.read_text(encoding="utf-8", errors="ignore")
+def load_txt_bytes(file_bytes: bytes, filename: str) -> List[Dict]:
+    text = file_bytes.decode("utf-8", errors="ignore")
 
     if not text.strip():
         return []
@@ -101,28 +119,26 @@ def load_txt(path: Path) -> List[Dict]:
         {
             "text": text,
             "page_number": None,
-            "source": path.name,
+            "source": filename,
         }
     ]
 
 
-def load_documents(data_dir: Path) -> List[Dict]:
-    all_pages = []
-
-    for path in sorted(data_dir.glob("*")):
-
-        if not path.is_file():
-            continue
-
-        suffix = path.suffix.lower()
+def load_documents_from_bytes(file_bytes:bytes,  filename:str) -> List[Dict]:
+    
+        suffix = Path(filename).suffix
 
         if suffix == ".pdf":
-            all_pages.extend(load_pdf_docling(path))
+            return load_pdf_docling_bytes(file_bytes,filename)
 
         elif suffix == ".docx":
-            all_pages.extend(load_docx(path))
+            return load_docx_bytes(file_bytes,filename)
 
         elif suffix == ".txt":
-            all_pages.extend(load_txt(path))
+            return load_txt_bytes(file_bytes,filename)
 
-    return all_pages
+        else:
+            raise ValueError(f"Unsupported file type:{suffix}")
+ 
+
+
