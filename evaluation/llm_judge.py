@@ -45,7 +45,7 @@ def get_judge_llm():
     return ChatGroq(
         model=config.GROQ_MODEL,
         api_key=config.GROQ_API_KEY,
-        temperature=0,  # deterministic scoring, not creative
+        temperature=0, 
     )
 
 

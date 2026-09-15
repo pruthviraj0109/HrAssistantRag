@@ -1,6 +1,9 @@
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool, StructuredTool
 from src.retrieval.vector_store import top_k_search
+import requests
+from langchain_community.tools import DuckDuckGoSearchRun
+from datetime import datetime
 
 POLICY_METADATA = {
     "HR Policy _ KESPL.pdf": {
@@ -29,6 +32,21 @@ class DocumentMetadataInput(BaseModel):
         ...,
         description="The exact Chunk ID string returned by a previous document_search call.",
     )
+
+
+class AdditionInput(BaseModel):
+    a: float = Field(..., description="The first number")
+    b: float = Field(..., description="The second number.")
+
+
+class WeatherInput(BaseModel):
+    city: str = Field(
+        ..., description="The city name to get current for , e.g. 'Mumbai'."
+    )
+
+
+class DateTimeInput(BaseModel):
+    pass
 
 
 def build_tools(vector_store):
@@ -84,6 +102,49 @@ def build_tools(vector_store):
             f"Effective date: {effective_date}"
         )
 
+    def add_numbers(a: float, b: float) -> str:
+        """Add two numbers together. Use this for any simple addition question."""
+        result = a + b
+        return f"The sum of {a} and {b} is {result}."
+
+    def get_current_weather(city: str) -> str:
+        """Fetches the current weather for a given city using a free public API."""
+        try:
+            geo_response = requests.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={"name": city, "count": 1},
+                timeout=5,
+            )
+
+            geo_data = geo_response.json()
+
+            if not geo_data.get("results"):
+                return f"Could not find location data for '{city}'."
+
+            location = geo_data["results"][0]
+            lat, lon = location["latitude"], location["longitude"]
+
+            weather_response = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={"latitude": lat, "longitude": lon, "current_weather": True},
+                timeout=5,
+            )
+
+            weather_data = weather_response.json()
+            current = weather_data.get("current_weather", {})
+
+            return (
+                f"Current weather in {city}:" f"{current.get('temperature')}°C",
+                f"windspeed {current.get('windspeed')}km/h. ",
+            )
+        except requests.RequestException as e:
+            return f"Failed to fetch weather data:{str(e)}"
+
+    def get_current_datetime() -> str:
+        """Returns the current date and time, Use this when the user asks what today's date is or what time it is."""
+        now = datetime.now()
+        return f"Current date and time: {now.strftime('%Y-%m-%d %H:%M:%S')}"
+
     search_tool = StructuredTool.from_function(
         func=document_search,
         name="document_search",
@@ -96,4 +157,38 @@ def build_tools(vector_store):
         description="Retrieves metadata about a specific chunk (source, page, version, effective date). Use only for version/origin questions.",
         args_schema=DocumentMetadataInput,
     )
-    return [search_tool, metadata_tool]
+
+    addition_tool = StructuredTool.from_function(
+        func=add_numbers,
+        name="add_numbers",
+        description="Adds two numbers together. Use ONLY for simple arithmetic additon , never for policy content questions.",
+        args_schema=AdditionInput,
+    )
+
+    weather_tool = StructuredTool.from_function(
+        func=get_current_weather,
+        name="get_current_weather",
+        description="Fetches real-time current weather for a city. Use ONLY when the user explicitly asks about weather, never for HR policy questions.",
+        args_schema=WeatherInput,
+    )
+
+    datetime_tool = StructuredTool.from_function(
+        func=get_current_datetime,
+        name="get_current_datetime",
+        description="Returns today's date and current time. Use ONLY when explicitly asked about the current date/time.",
+        args_schema=DateTimeInput,
+    )
+
+    duckduckgo_search_tool = DuckDuckGoSearchRun(
+        name="web_search",
+        description="Searches the web for general knowledge questions Not covered in the uploaded documents. ",
+    )
+
+    return [
+        search_tool,
+        metadata_tool,
+        addition_tool,
+        weather_tool,
+        duckduckgo_search_tool,
+        datetime_tool,
+    ]
