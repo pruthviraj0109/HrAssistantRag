@@ -65,3 +65,4 @@ def get_collection_name(username: str, domain: str) -> str:
         collection_name = f"user_{collection_name}"
 
     return collection_name
+

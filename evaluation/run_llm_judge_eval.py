@@ -96,4 +96,4 @@ def run_llm_judge_evaluation(username: str, domain: str):
 
 
 if __name__ == "__main__":
-    run_llm_judge_evaluation(username="pruthvirajp548@gmail.com", domain="hr")
+    run_llm_judge_evaluation(username="aditya@gmail.com", domain="hr")

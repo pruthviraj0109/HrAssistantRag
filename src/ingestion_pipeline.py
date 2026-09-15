@@ -17,6 +17,7 @@ def run_ingestion(username: str, domain: str) -> dict:
 
     raw_pages = load_documents(data_dir)
     print(f"Loaded {len(raw_pages)} page / paragraph units.")
+    print(raw_pages)
 
     print("Cleaning documents...")
     cleaned_pages = clean_documents(raw_pages)
