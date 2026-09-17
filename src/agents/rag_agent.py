@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 import config
 
-from src.agent.memory import ConversationMemory
+from src.agents.memory import ConversationMemory
 from src.tools.factory import build_tools
 
 #
