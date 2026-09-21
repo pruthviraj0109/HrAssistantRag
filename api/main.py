@@ -156,7 +156,6 @@ def chat(
 
         graph = build_hr_graph(
             rag_agent=rag_agent,
-            db=db,
         )
 
         agents_sessions[key] = {
@@ -167,13 +166,16 @@ def chat(
     graph = agents_sessions[key]["graph"]
 
     config_dict = {
-        "configurable": {"thread_id": f"hr-assistant-{current_user.username}"}
+        "configurable": {
+            "thread_id": f"hr-assistant-{current_user.username}",
+            "db": db,
+        }
     }
 
     try:
         result = graph.invoke(
             {
-                "messages":[HumanMessage(content=request.message)],
+                "messages": [HumanMessage(content=request.message)],
                 "question": request.message,
                 "user_id": current_user.id,
                 "username": current_user.username,

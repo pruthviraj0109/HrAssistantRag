@@ -4,13 +4,27 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from db.database import get_db
-from db.models import User, Employee, LeaveBalance
+from db.models import User, Employee, LeaveBalance, OnboardingTask, TrainingRecord
 from auth.security import hash_password, verify_password, create_access_token
 from auth.dependencies import validate_password_strength
 
 router = APIRouter()
 
 DEFAULT_LEAVE_BALANCES = {"sick": 12, "casual": 12, "earned": 18}
+
+
+DEFAULT_ONBOARDING = [
+    ("Submit PAN card", "documents", 3),
+    ("Submit bank details", "documents", 3),
+    ("Submit address proof", "documents", 5),
+    ("Complete IT setup", "it", 1),
+    ("Sign code of conduct", "compliance", 7),
+]
+DEFAULT_TRAINING = [
+    ("Data Protection", True),
+    ("Workplace Safety", True),
+    ("Anti-Harassment", True),
+]
 
 
 class RegisterRequest(BaseModel):
@@ -50,6 +64,17 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
                 total_days=total_days,
                 used_days=0,
             )
+        )
+
+    for name, cat, day in DEFAULT_ONBOARDING:
+        db.add(
+            OnboardingTask(
+                employee_id=employee.id, task_name=name, category=cat, due_day=day
+            )
+        )
+    for name, mand in DEFAULT_TRAINING:
+        db.add(
+            TrainingRecord(employee_id=employee.id, course_name=name, mandatory=mand)
         )
 
     db.commit()

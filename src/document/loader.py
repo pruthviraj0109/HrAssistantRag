@@ -171,10 +171,10 @@ def load_pdf_docling_bytes(file_bytes: bytes, filename: str) -> List[Dict]:
 
 def load_pdf_from_bytes(file_bytes: bytes, filename: str) -> List[Dict]:
     try:
-        return load_pdf_pdfplumber_bytes(file_bytes, filename)
+        return load_pdf_docling_bytes(file_bytes, filename)
 
     except Exception as e:
-        return load_pdf_docling_bytes(file_bytes, filename)
+        return load_pdf_pdfplumber_bytes(file_bytes, filename)
 
         print(
             f"PdfPlumber failed/timed out on {filename} ({e}), falling back to pdfplumber."

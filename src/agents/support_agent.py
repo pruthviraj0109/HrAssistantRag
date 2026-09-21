@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 import os
 
 HR_CONTACT_INFO = {
-    "email": "hr@microsoft.com",
+    "email": "hr@abc.com",
     "phone": "7709368076",
 }
 

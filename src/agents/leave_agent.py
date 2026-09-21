@@ -83,6 +83,8 @@ def run_leave_agent(
 
     if messages:
         agent_messages.extend(messages[-12:])
+    else:
+        agent_messages.append(HumanMessage(content=question))
 
     agent_messages.append(HumanMessage(content=question))
 
@@ -94,6 +96,18 @@ def run_leave_agent(
 
     answer = result["messages"][-1].content
 
+    submitted = any(
+        getattr(m, "name", "") == "submit_leave_request"
+        and "submitted successfully" in str(m.content)
+        for m in result["messages"]
+    )
+    validated = any(
+        getattr(m, "name", "") == "validate_leave"
+        and str(m.content).startswith("Confirm:")
+        for m in result["messages"]
+    )
+
     return {
         "agent_response": answer,
+        "awaiting_confirmation": validated and not submitted,
     }
