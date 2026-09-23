@@ -22,7 +22,6 @@ from db.models import User
 from auth.routes import router as auth_router
 from auth.dependencies import get_current_user
 
-
 Base.metadata.create_all(bind=engine)
 
 
@@ -62,6 +61,8 @@ class RunMetrics(BaseModel):
     tool_calls: int = 0
     tools_used: list[str] = Field(default_factory=list)
     llm_calls: int = 0
+    tool_execution_time_ms: int = 0
+    tool_executions: list[dict] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -96,6 +97,8 @@ class ExecutionMetricsCallback(BaseCallbackHandler):
         self.tool_calls = 0
         self.tools_used = []
         self.models = []
+        self.tool_start_times = {}
+        self.tool_executions = []
 
     def on_llm_start(self, serialized, prompts, **kwargs):
         self.llm_calls += 1
@@ -137,7 +140,7 @@ class ExecutionMetricsCallback(BaseCallbackHandler):
         if model_name and model_name not in self.models:
             self.models.append(model_name)
 
-    def on_tool_start(self, serialized, input_str, **kwargs):
+    def on_tool_start(self, serialized, input_str, run_id, **kwargs):
         self.tool_calls += 1
 
         tool_name = None
@@ -152,6 +155,28 @@ class ExecutionMetricsCallback(BaseCallbackHandler):
         if tool_name and tool_name not in self.tools_used:
             self.tools_used.append(tool_name)
 
+        self.tool_start_times[run_id] = {
+            "tool": tool_name,
+            "start": perf_counter(),
+        }
+
+    def on_tool_end(self, output, run_id, **kwargs):
+        tool_data = self.tool_start_times.pop(
+            run_id,
+            None,
+        )
+
+        if tool_data is None:
+            return
+
+        execution_time_ms = int((perf_counter() - tool_data["start"]) * 1000)
+        self.tool_executions.append(
+            {
+                "tool": tool_data["tool"],
+                "execution_time_ms": execution_time_ms,
+            }
+        )
+
 
 def _collect_metrics(
     usage: dict,
@@ -159,11 +184,17 @@ def _collect_metrics(
     execution_metrics: ExecutionMetricsCallback,
 ) -> RunMetrics:
 
+    total_tool_execution_time = sum(
+        item["execution_time_ms"] for item in execution_metrics.tool_executions
+    )
+
     metrics = RunMetrics(
         latency_ms=latency_ms,
         llm_calls=execution_metrics.llm_calls,
         tool_calls=execution_metrics.tool_calls,
         tools_used=execution_metrics.tools_used,
+        tool_execution_time_ms=total_tool_execution_time,
+        tool_executions=execution_metrics.tool_executions,
     )
 
     for model_name, usage_data in (usage or {}).items():
@@ -217,10 +248,7 @@ def upload_document(
 
     suffix_check = file.filename.lower()
 
-    if not any(
-        suffix_check.endswith(ext)
-        for ext in ALLOWED_EXTENSIONS
-    ):
+    if not any(suffix_check.endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
@@ -294,9 +322,7 @@ def chat(
         )
 
     try:
-        answer = agents_sessions[key].ask(
-            request.question
-        )
+        answer = agents_sessions[key].ask(request.question)
 
     except Exception as e:
         raise HTTPException(
@@ -304,9 +330,7 @@ def chat(
             detail=f"Agent error: {str(e)}",
         )
 
-    return ChatResponse(
-        answer=answer
-    )
+    return ChatResponse(answer=answer)
 
 
 @app.post(
@@ -382,26 +406,18 @@ def chat_hr_assistant(
 
             graph_result = graph.invoke(
                 {
-                    "messages": [
-                        HumanMessage(
-                            content=request.message
-                        )
-                    ],
+                    "messages": [HumanMessage(content=request.message)],
                     "question": request.message,
                     "user_id": current_user.id,
                     "username": current_user.username,
                 },
                 config={
                     **config_dict,
-                    "callbacks": [
-                        execution_metrics
-                    ],
+                    "callbacks": [execution_metrics],
                 },
             )
 
-            latency_ms = int(
-                (perf_counter() - started) * 1000
-            )
+            latency_ms = int((perf_counter() - started) * 1000)
 
             usage = usage_callback.usage_metadata
 
@@ -434,7 +450,13 @@ def chat_hr_assistant(
         f"{metrics.latency_ms}ms · "
         f"llm_calls={metrics.llm_calls} · "
         f"tool_calls={metrics.tool_calls} · "
+        f"tool_time={metrics.tool_execution_time_ms}ms · "
         f"tools={metrics.tools_used}"
+    )
+
+    print(
+        "TOOL EXECUTIONS:",
+        metrics.tool_executions,
     )
 
     return HRAssistantResponse(
@@ -479,6 +501,4 @@ def reset_conversation(
 
             session.memory.clear()
 
-    return {
-        "status": "Conversation memory cleared"
-    }
+    return {"status": "Conversation memory cleared"}
