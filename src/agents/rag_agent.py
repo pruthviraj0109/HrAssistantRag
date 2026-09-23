@@ -82,13 +82,11 @@ class RagAgent:
         history = self.memory.get_messages()
 
         if history:
-
             messages.extend(history[-MAX_HISTORY_MESSAGES:])
 
         messages.append(HumanMessage(content=question))
 
         try:
-
             result = self.executor.invoke(
                 {"messages": messages},
                 {"recursion_limit": (MAX_TOOLS_CALLS * 2) + 2},
@@ -98,22 +96,28 @@ class RagAgent:
         except Exception as e:
             msg = str(e)
 
-            if any(k in msg for k in ("rate_limit", "413", "429", "Request too large")):
+            # anything that is NOT a rate limit is a real error — let it
+            # propagate so the traceback is not swallowed
+            if not any(
+                k in msg for k in ("rate_limit", "413", "429", "Request too large")
+            ):
+                raise
 
-                self.memory.clear()
-                try:
+            self.memory.clear()
+            try:
+                result = self.executor.invoke(
+                    {
+                        "messages": [
+                            SystemMessage(content=self.system_prompt),
+                            HumanMessage(content=question),
+                        ]
+                    },
+                    {"recursion_limit": 4},
+                )
+                answer = result["messages"][-1].content
+            except Exception:
+                return FALLBACK_ANSWER
 
-                    retry = [
-                        SystemMessage(content=self.system_prompt),
-                        HumanMessage(content=question),
-                    ]
-                    result = self.executor.invoke(
-                        {"messages": retry},
-                        {"recursion_limit": 4},
-                    )
-                    answer = result["messages"][-1].content
-                except Exception:
-                    return FALLBACK_ANSWER
         if not answer:
             answer = (
                 "I could not produce an answer for that. "

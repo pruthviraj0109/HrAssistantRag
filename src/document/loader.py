@@ -92,8 +92,6 @@ def load_pdf_pdfplumber_bytes(file_bytes: bytes, filename: str) -> List[Dict]:
         return pages
 
 
-
-
 def _table_to_text(item: TableItem, doc) -> str:
     """
     Converts a Docling TableItem into a Markdown table string, so table
@@ -112,6 +110,7 @@ def _table_to_text(item: TableItem, doc) -> str:
 
 def _extract_pages_from_docling_doc(doc, filename: str) -> List[Dict]:
     page_texts: Dict[int, List[str]] = {}
+    covered: set = set()
 
     for item, _level in doc.iterate_items():
         prov = getattr(item, "prov", None)
@@ -121,10 +120,18 @@ def _extract_pages_from_docling_doc(doc, filename: str) -> List[Dict]:
             table_text = _table_to_text(item, doc)
             if table_text.strip():
                 page_texts.setdefault(page_no, []).append(table_text)
+                for line in table_text.splitlines():
+                    for cell in line.split("|"):
+                        cell = " ".join(cell.split()).lower()
+                        if len(cell) > 20:
+                            covered.add(cell)
             continue
 
         text = getattr(item, "text", None)
         if text and text.strip():
+            key = " ".join(text.split()).lower()
+            if key in covered:
+                continue
             page_texts.setdefault(page_no, []).append(text)
 
     pages = []
